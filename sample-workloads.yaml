@@ -1,0 +1,148 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: deathstar
+  namespace: default
+  labels:
+    app.kubernetes.io/name: deathstar
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+  selector:
+    org: empire
+    class: deathstar
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: deathstar
+  namespace: default
+  labels:
+    app.kubernetes.io/name: deathstar
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      org: empire
+      class: deathstar
+  template:
+    metadata:
+      labels:
+        org: empire
+        class: deathstar
+        app.kubernetes.io/name: deathstar
+    spec:
+      dnsConfig:
+        nameservers:
+          - 169.254.20.10
+        searches:
+          - default.svc.cluster.local
+          - svc.cluster.local
+          - cluster.local
+        options:
+          - name: ndots
+            value: "2"
+          - name: attempts
+            value: "3"
+          - name: timeout
+            value: "1"
+          - name: edns0
+      dnsPolicy: "None"
+      containers:
+        - name: deathstar
+          image: quay.io/cilium/starwars:v2.1@sha256:833d915ec68fca3ce83668fc5dae97c455b2134d8f23ef96586f55b894cfb1e8
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: tiefighter
+  namespace: default
+  labels:
+    org: empire
+    class: tiefighter
+    app.kubernetes.io/name: tiefighter
+spec:
+  dnsConfig:
+    nameservers:
+      - 169.254.20.10
+    searches:
+      - default.svc.cluster.local
+      - svc.cluster.local
+      - cluster.local
+    options:
+      - name: ndots
+        value: "2"
+      - name: attempts
+        value: "3"
+      - name: timeout
+        value: "1"
+      - name: edns0
+  dnsPolicy: "None"
+  containers:
+    - name: spaceship
+      image: quay.io/cilium/json-mock:v1.3.8@sha256:5aad04835eda9025fe4561ad31be77fd55309af8158ca8663a72f6abb78c2603
+---
+apiVersion: "cilium.io/v2"
+kind: CiliumNetworkPolicy
+metadata:
+  name: "rule-tiefighter"
+  namespace: default
+spec:
+  description: "L7 policy to restrict access to specific HTTP call"
+  endpointSelector:
+    matchLabels:
+      org: empire
+      class: tiefighter
+  egress:
+    - toFQDNs:
+        - matchPattern: "*.debian.org"
+    - toEntities:
+        - host
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: ANY
+          rules:
+            dns:
+              - matchPattern: "*"
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: ANY
+          rules:
+            dns:
+              - matchPattern: "*"
+    - toEndpoints:
+        - matchLabels:
+            org: empire
+            class: deathstar
+      toPorts:
+        - ports:
+            - port: "80"
+              protocol: TCP
+---
+apiVersion: "cilium.io/v2"
+kind: CiliumNetworkPolicy
+metadata:
+  name: "ruledeathstar"
+  namespace: default
+spec:
+  description: "L3-L4 policy to restrict deathstar access to empire ships only"
+  endpointSelector:
+    matchLabels:
+      org: empire
+      class: deathstar
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            org: empire
+      toPorts:
+        - ports:
+            - port: "80"
+              protocol: TCP
